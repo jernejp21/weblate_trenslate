@@ -43,19 +43,6 @@ client = Weblate(
     key=api_key["weblate"],
 )
 
-#project = client.get_project("fluidd")
-#component_url = project["components_list_url"]
-#component = client.get_component("fluidd/fluidd")
-#translations = Translation(client, "https://hosted.weblate.org/api/translations/fluidd/fluidd/sl/")
-#units = list(translations.units())
-
-#for unit in units:
-#    if unit["state"] == UNTRANSLATED:
-#        source = unit["source"]
-#        translated = translate(source, source_lang="en", target_lang="sl")
-#        unit.patch(state=NEEDS_EDITING, target=translated)
-#        print(f"Source: {unit['source'][0]}, Target: {translated[0]}")
-
 def get_untranslated_units(project_url: str) -> list[dict]:
     translations = Translation(client, project_url)
     units = list(translations.units())
@@ -81,18 +68,19 @@ for project in projects:
 
     for chunk in untranslated_chunks:
         sources = []
+        units_to_translate = []
         for unit in chunk:
             if len(unit["source"]) == 1:
                 sources.extend(unit["source"])  # do not translate multi-line segments (plural)
-                #BUG: doesn't remove skipped units!!!
+                units_to_translate.append(unit)
 
         if sources:
             translated_segments = translate_segments(sources, source_lang="en", target_lang="sl")
 
-            for unit in untranslated_units:
+            for unit in units_to_translate:
                 target_list = [translated_segments[0]]
                 del translated_segments[0]
-                print(f"Source: {unit['source']}, Target: {target_list}")
+                #print(f"Source: {unit['source']}, Target: {target_list}")
                 unit.patch(state=NEEDS_EDITING, target=target_list)
 
 print("Konec")
