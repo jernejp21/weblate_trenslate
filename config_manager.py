@@ -34,13 +34,8 @@ class ConfigManager:
         self.config_file_path = config_file_path
 
     def load_api_keys(self) -> dict:
-        with open(self.config_file_path, "r", encoding="utf-8") as file:
-            config = json.load(file)
-
-        if "api_keys" not in config:
-            self.config_file["api_keys"] = {}
-
-        return config["api_keys"]
+        self.config_file.setdefault("api_keys", {})
+        return self.config_file["api_keys"]
 
     def set_api_keys(self, api_keys: dict):
         self.config_file["api_keys"] = api_keys
@@ -49,13 +44,8 @@ class ConfigManager:
             json.dump(self.config_file, file, indent=4)
 
     def load_projects(self) -> dict:
-        with open(self.config_file_path, "r", encoding="utf-8") as file:
-            config = json.load(file)
-
-        if "projects" not in config:
-            self.config_file["projects"] = {}
-
-        return config["projects"]
+        self.config_file.setdefault("projects", [])
+        return self.config_file["projects"]
 
     def set_projects(self, projects: list[dict]):
         self.config_file["projects"] = projects

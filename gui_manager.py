@@ -1,0 +1,213 @@
+import queue
+import threading
+import tkinter as tk
+from tkinter import messagebox, ttk
+
+from config_manager import ConfigManager
+from translator import Translator
+
+
+class TranslatorGUI(tk.Tk):
+    def __init__(self, config_manager: ConfigManager, translator: Translator):
+        super().__init__()
+        self.config_manager = config_manager
+        self.translator = translator
+        self.result_queue = queue.Queue()
+
+        self.title("Weblate Translator")
+        self.geometry("820x580")
+        self.minsize(650, 450)
+        self._build_ui()
+        self._refresh_projects()
+        self.after(100, self._process_queue)
+
+    def _build_ui(self):
+        container = ttk.Frame(self, padding=16)
+        container.pack(fill="both", expand=True)
+        ttk.Label(container, text="Weblate Translator", font=("Segoe UI", 18, "bold")).pack(anchor="w")
+        ttk.Label(container, text="Upravljanje projektov in prevodov").pack(anchor="w", pady=(0, 12))
+
+        self.tabs = ttk.Notebook(container)
+        self.tabs.pack(fill="both", expand=True)
+        self.translation_tab = ttk.Frame(self.tabs, padding=16)
+        self.projects_tab = ttk.Frame(self.tabs, padding=12)
+        self.settings_tab = ttk.Frame(self.tabs, padding=16)
+        self.tabs.add(self.translation_tab, text="Prevajanje")
+        self.tabs.add(self.projects_tab, text="Projekti")
+        self.tabs.add(self.settings_tab, text="Nastavitve")
+        self._build_translation_tab()
+        self._build_projects_tab()
+        self._build_settings_tab()
+
+    def _build_translation_tab(self):
+        controls = ttk.Frame(self.translation_tab)
+        controls.pack(fill="x")
+        ttk.Label(controls, text="Projekt").pack(side="left")
+        self.project_choice = tk.StringVar()
+        self.project_combo = ttk.Combobox(controls, textvariable=self.project_choice, state="readonly", width=42)
+        self.project_combo.pack(side="left", padx=8)
+        self.translate_button = ttk.Button(controls, text="Zaženi prevajanje", command=self._start_translation)
+        self.translate_button.pack(side="left")
+        self.status_text = tk.StringVar(value="Pripravljen")
+        ttk.Label(self.translation_tab, textvariable=self.status_text).pack(anchor="w", pady=(12, 6))
+        self.log = tk.Text(self.translation_tab, height=18, wrap="word", state="disabled")
+        self.log.pack(fill="both", expand=True)
+
+    def _build_projects_tab(self):
+        columns = ("name", "source", "target", "link")
+        self.project_table = ttk.Treeview(self.projects_tab, columns=columns, show="headings", selectmode="browse")
+        for column, title, width in (
+            ("name", "Ime", 150), ("source", "Izvorni jezik", 110),
+            ("target", "Ciljni jezik", 110), ("link", "Povezava prevoda", 360),
+        ):
+            self.project_table.heading(column, text=title)
+            self.project_table.column(column, width=width, anchor="w")
+        self.project_table.pack(fill="both", expand=True)
+        buttons = ttk.Frame(self.projects_tab)
+        buttons.pack(fill="x", pady=(10, 0))
+        ttk.Button(buttons, text="Dodaj", command=self._add_project).pack(side="left")
+        ttk.Button(buttons, text="Uredi", command=self._edit_project).pack(side="left", padx=6)
+        ttk.Button(buttons, text="Odstrani", command=self._delete_project).pack(side="left")
+
+    def _build_settings_tab(self):
+        ttk.Label(self.settings_tab, text="LeeBudy API ključ").grid(row=0, column=0, sticky="w", pady=6)
+        ttk.Label(self.settings_tab, text="Weblate API ključ").grid(row=1, column=0, sticky="w", pady=6)
+        keys = self.config_manager.api_keys
+        self.leemeta_key = tk.StringVar(value=keys.get("leemeta", ""))
+        self.weblate_key = tk.StringVar(value=keys.get("weblate", ""))
+        ttk.Entry(self.settings_tab, textvariable=self.leemeta_key, width=55).grid(row=0, column=1, sticky="ew", padx=(12, 0), pady=6)
+        ttk.Entry(self.settings_tab, textvariable=self.weblate_key, width=55).grid(row=1, column=1, sticky="ew", padx=(12, 0), pady=6)
+        ttk.Button(self.settings_tab, text="Shrani ključe", command=self._save_keys).grid(row=2, column=1, sticky="e", pady=(8, 0))
+        self.settings_tab.columnconfigure(1, weight=1)
+
+    def _refresh_projects(self):
+        projects = self.config_manager.projects
+        for row in self.project_table.get_children():
+            self.project_table.delete(row)
+        for index, project in enumerate(projects):
+            self.project_table.insert("", "end", iid=str(index), values=(
+                project.get("name", ""), project.get("source_lang", ""),
+                project.get("target_lang", ""), project.get("translations_link", ""),
+            ))
+        choices = ["Vsi projekti"] + [
+            f"{index + 1}. {project.get('name', 'Brez imena')}"
+            for index, project in enumerate(projects)
+        ]
+        self.project_combo["values"] = choices
+        if self.project_choice.get() not in choices:
+            self.project_choice.set(choices[0])
+
+    def _project_dialog(self, title, project=None):
+        project = project or {}
+        dialog = tk.Toplevel(self)
+        dialog.title(title)
+        dialog.transient(self)
+        dialog.grab_set()
+        dialog.resizable(False, False)
+        fields = (
+            ("Ime projekta", "name"), ("Izvorni jezik", "source_lang"),
+            ("Ciljni jezik", "target_lang"), ("Povezava prevoda", "translations_link"),
+        )
+        values = {}
+        for row, (label, key) in enumerate(fields):
+            ttk.Label(dialog, text=label).grid(row=row, column=0, sticky="w", padx=12, pady=7)
+            values[key] = tk.StringVar(value=project.get(key, ""))
+            ttk.Entry(dialog, textvariable=values[key], width=50).grid(row=row, column=1, padx=(8, 12), pady=7)
+
+        def save():
+            result = {key: variable.get().strip() for key, variable in values.items()}
+            if not all(result.values()):
+                messagebox.showerror("Manjkajoči podatki", "Izpolni vsa polja.", parent=dialog)
+                return
+            dialog.result = result
+            dialog.destroy()
+
+        actions = ttk.Frame(dialog)
+        actions.grid(row=len(fields), column=0, columnspan=2, sticky="e", padx=12, pady=(4, 12))
+        ttk.Button(actions, text="Prekliči", command=dialog.destroy).pack(side="right")
+        ttk.Button(actions, text="Shrani", command=save).pack(side="right", padx=(0, 6))
+        self.wait_window(dialog)
+        return getattr(dialog, "result", None)
+
+    def _add_project(self):
+        project = self._project_dialog("Dodaj projekt")
+        if project is not None:
+            self.config_manager.projects.append(project)
+            self._save_projects()
+
+    def _edit_project(self):
+        selected = self.project_table.selection()
+        if not selected:
+            messagebox.showinfo("Izberi projekt", "Najprej izberi projekt.", parent=self)
+            return
+        index = int(selected[0])
+        project = self._project_dialog("Uredi projekt", self.config_manager.projects[index])
+        if project is not None:
+            self.config_manager.projects[index] = project
+            self._save_projects()
+
+    def _delete_project(self):
+        selected = self.project_table.selection()
+        if not selected:
+            messagebox.showinfo("Izberi projekt", "Najprej izberi projekt.", parent=self)
+            return
+        index = int(selected[0])
+        name = self.config_manager.projects[index].get("name", "projekt")
+        if messagebox.askyesno("Odstrani projekt", f"Res želiš odstraniti projekt '{name}'?", parent=self):
+            del self.config_manager.projects[index]
+            self._save_projects()
+
+    def _save_projects(self):
+        self.config_manager.set_projects(self.config_manager.projects)
+        self._refresh_projects()
+
+    def _save_keys(self):
+        keys = {"leemeta": self.leemeta_key.get().strip(), "weblate": self.weblate_key.get().strip()}
+        self.config_manager.set_api_keys(keys)
+        self.translator.api_keys = keys
+        messagebox.showinfo("Nastavitve", "API ključi so shranjeni.", parent=self)
+
+    def _start_translation(self):
+        projects = self.config_manager.projects
+        choice = self.project_choice.get()
+        if not projects:
+            messagebox.showinfo("Ni projektov", "Najprej dodaj projekt.", parent=self)
+            return
+        if not all(self.translator.api_keys.get(key) for key in ("leemeta", "weblate")):
+            messagebox.showerror("Manjkajoči API ključi", "V zavihku Nastavitve vnesi in shrani oba API ključa.", parent=self)
+            return
+        if choice == "Vsi projekti":
+            selected_projects = list(projects)
+        else:
+            project_index = self.project_combo.current() - 1
+            selected_projects = [projects[project_index]]
+        self.translate_button.configure(state="disabled")
+        self.status_text.set("Prevajanje poteka ...")
+        self._append_log(f"Začenjam prevajanje za {len(selected_projects)} projektov.")
+        threading.Thread(target=self._translate_worker, args=(selected_projects,), daemon=True).start()
+
+    def _translate_worker(self, projects):
+        try:
+            self.translator.translate_projects(projects)
+            self.result_queue.put(("success", "Prevajanje je zaključeno."))
+        except Exception as error:
+            self.result_queue.put(("error", str(error)))
+
+    def _process_queue(self):
+        try:
+            while True:
+                kind, message = self.result_queue.get_nowait()
+                self.status_text.set("Pripravljeno" if kind == "success" else "Napaka pri prevajanju")
+                self._append_log(message)
+                self.translate_button.configure(state="normal")
+                if kind == "error":
+                    messagebox.showerror("Napaka pri prevajanju", message, parent=self)
+        except queue.Empty:
+            pass
+        self.after(100, self._process_queue)
+
+    def _append_log(self, message):
+        self.log.configure(state="normal")
+        self.log.insert("end", message + "\n")
+        self.log.see("end")
+        self.log.configure(state="disabled")
