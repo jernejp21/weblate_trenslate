@@ -242,14 +242,12 @@ class TranslatorGUI(tk.Tk):
                     self._append_log(message)
                 elif kind == "status_success":
                     project_name, status = message
-                    messagebox.showinfo(
-                        f"Stanje projekta: {project_name}",
-                        f"Vsi nizi: {status['total']}\n"
-                        f"Prevedeni nizi: {status['translated']}\n"
-                        f"Neprevedeni nizi: {status['untranslated']}\n"
-                        f"Nizi označeni za prevod: {status['needs_editing']}",
-                        parent=self,
-                    )
+                    self._append_log(f"Stanje projekta '{project_name}'")
+                    self._append_log(f"Vsi nizi: {status['total']}")
+                    self._append_log(f"Prevedeni nizi: {status['translated']}")
+                    self._append_log(f"Neprevedeni nizi: {status['untranslated']}")
+                    self._append_log(f"Nizi označeni za prevod: {status['needs_editing']}")
+                    self._append_log("")  # prazna vrstica za ločilo
                 else:
                     self._append_log(message)
                 self.translate_button.configure(state="normal")
