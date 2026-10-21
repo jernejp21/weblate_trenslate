@@ -87,3 +87,16 @@ class Translator:
                 untranslated_units.append(unit)
 
         return untranslated_units
+
+    def get_project_status(self, project_url: str) -> dict[str, int]:
+        api_key = self.api_keys["weblate"]
+        client = Weblate(url=WEBLATE_URL, key=api_key)
+        translations = Translation(client, project_url)
+        units = list(translations.units())
+
+        return {
+            "total": len(units),
+            "translated": sum(unit["state"] == TRANSLATED for unit in units),
+            "untranslated": sum(unit["state"] == UNTRANSLATED for unit in units),
+            "needs_editing": sum(unit["state"] == NEEDS_EDITING for unit in units),
+        }

@@ -48,6 +48,8 @@ class TranslatorGUI(tk.Tk):
         self.project_combo.pack(side="left", padx=8)
         self.translate_button = ttk.Button(controls, text="Zaženi prevajanje", command=self._start_translation)
         self.translate_button.pack(side="left")
+        self.status_button = ttk.Button(controls, text="Prikaži stanje", command=self._show_status)
+        self.status_button.pack(side="left", padx=(8, 0))
         self.status_text = tk.StringVar(value="Pripravljen")
         ttk.Label(self.translation_tab, textvariable=self.status_text).pack(anchor="w", pady=(12, 6))
         self.log = tk.Text(self.translation_tab, height=18, wrap="word", state="disabled")
@@ -182,9 +184,37 @@ class TranslatorGUI(tk.Tk):
             project_index = self.project_combo.current() - 1
             selected_projects = [projects[project_index]]
         self.translate_button.configure(state="disabled")
+        self.status_button.configure(state="disabled")
         self.status_text.set("Prevajanje poteka ...")
         self._append_log(f"Začenjam prevajanje za {len(selected_projects)} projektov.")
         threading.Thread(target=self._translate_worker, args=(selected_projects,), daemon=True).start()
+
+    def _show_status(self):
+        projects = self.config_manager.projects
+        choice = self.project_choice.get()
+        if not projects:
+            messagebox.showinfo("Ni projektov", "Najprej dodaj projekt.", parent=self)
+            return
+        if choice == "Vsi projekti":
+            messagebox.showinfo("Izberi projekt", "Za prikaz stanja izberi posamezen projekt.", parent=self)
+            return
+        if not self.translator.api_keys.get("weblate"):
+            messagebox.showerror("Manjkajoči API ključ", "V zavihku Nastavitve vnesi in shrani Weblate API ključ.", parent=self)
+            return
+
+        project_index = self.project_combo.current() - 1
+        project = projects[project_index]
+        self.translate_button.configure(state="disabled")
+        self.status_button.configure(state="disabled")
+        self.status_text.set("Pridobivam stanje projekta ...")
+        threading.Thread(target=self._status_worker, args=(project,), daemon=True).start()
+
+    def _status_worker(self, project):
+        try:
+            status = self.translator.get_project_status(project["translations_link"])
+            self.result_queue.put(("status_success", (project.get("name", "Projekt"), status)))
+        except Exception as error:
+            self.result_queue.put(("status_error", str(error)))
 
     def _translate_worker(self, projects):
         try:
@@ -197,11 +227,26 @@ class TranslatorGUI(tk.Tk):
         try:
             while True:
                 kind, message = self.result_queue.get_nowait()
-                self.status_text.set("Pripravljeno" if kind == "success" else "Napaka pri prevajanju")
-                self._append_log(message)
+                self.status_text.set("Pripravljeno" if kind in ("success", "status_success") else "Napaka")
+                if kind == "success":
+                    self._append_log(message)
+                elif kind == "status_success":
+                    project_name, status = message
+                    messagebox.showinfo(
+                        f"Stanje projekta: {project_name}",
+                        f"Vsi nizi: {status['total']}\n"
+                        f"Prevedeni nizi: {status['translated']}\n"
+                        f"Neprevedeni nizi: {status['untranslated']}\n"
+                        f"Nizi označeni za prevod: {status['needs_editing']}",
+                        parent=self,
+                    )
+                else:
+                    self._append_log(message)
                 self.translate_button.configure(state="normal")
-                if kind == "error":
-                    messagebox.showerror("Napaka pri prevajanju", message, parent=self)
+                self.status_button.configure(state="normal")
+                if kind in ("error", "status_error"):
+                    title = "Napaka pri prevajanju" if kind == "error" else "Napaka pri pridobivanju stanja"
+                    messagebox.showerror(title, message, parent=self)
         except queue.Empty:
             pass
         self.after(100, self._process_queue)
