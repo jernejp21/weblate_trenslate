@@ -57,14 +57,19 @@ class TranslatorGUI(tk.Tk):
 
     def _build_projects_tab(self):
         columns = ("name", "source", "target", "link")
-        self.project_table = ttk.Treeview(self.projects_tab, columns=columns, show="headings", selectmode="browse")
-        for column, title, width in (
-            ("name", "Ime", 150), ("source", "Izvorni jezik", 110),
-            ("target", "Ciljni jezik", 110), ("link", "Povezava prevoda", 360),
+        table_frame = ttk.Frame(self.projects_tab)
+        table_frame.pack(fill="both", expand=True)
+        self.project_table = ttk.Treeview(table_frame, columns=columns, show="headings", selectmode="browse")
+        for column, title, width, anchor in (
+            ("name", "Ime", 150, "w"), ("source", "Izvorni jezik", 80, "c"),
+            ("target", "Ciljni jezik", 80, "c"), ("link", "Povezava prevoda", 500, "w"),
         ):
             self.project_table.heading(column, text=title)
-            self.project_table.column(column, width=width, anchor="w")
+            self.project_table.column(column, width=width, anchor=anchor, stretch=False)
         self.project_table.pack(fill="both", expand=True)
+        scrollbar = ttk.Scrollbar(table_frame, orient="horizontal", command=self.project_table.xview)
+        self.project_table.configure(xscrollcommand=scrollbar.set)
+        scrollbar.pack(side="bottom", fill="x")
         buttons = ttk.Frame(self.projects_tab)
         buttons.pack(fill="x", pady=(10, 0))
         ttk.Button(buttons, text="Dodaj", command=self._add_project).pack(side="left")
