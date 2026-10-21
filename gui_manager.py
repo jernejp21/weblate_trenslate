@@ -133,6 +133,11 @@ class TranslatorGUI(tk.Tk):
         actions.grid(row=len(fields), column=0, columnspan=2, sticky="e", padx=12, pady=(4, 12))
         ttk.Button(actions, text="Prekliči", command=dialog.destroy).pack(side="right")
         ttk.Button(actions, text="Shrani", command=save).pack(side="right", padx=(0, 6))
+        self.update_idletasks()
+        dialog.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - dialog.winfo_reqwidth()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - dialog.winfo_reqheight()) // 2
+        dialog.geometry(f"+{x}+{y}")
         self.wait_window(dialog)
         return getattr(dialog, "result", None)
 
