@@ -50,6 +50,8 @@ class TranslatorGUI(tk.Tk):
         self.translate_button.pack(side="left")
         self.status_button = ttk.Button(controls, text="Prikaži stanje", command=self._show_status)
         self.status_button.pack(side="left", padx=(8, 0))
+        self.reset_button = ttk.Button(controls, text="Ponastavi prevode", command=self._reset_needs_editing)
+        self.reset_button.pack(side="left", padx=(8, 0))
         self.status_text = tk.StringVar(value="Pripravljen")
         ttk.Label(self.translation_tab, textvariable=self.status_text).pack(anchor="w", pady=(12, 6))
         self.log = tk.Text(self.translation_tab, height=18, wrap="word", state="disabled")
@@ -195,6 +197,7 @@ class TranslatorGUI(tk.Tk):
             selected_projects = [projects[project_index]]
         self.translate_button.configure(state="disabled")
         self.status_button.configure(state="disabled")
+        self.reset_button.configure(state="disabled")
         self.status_text.set("Prevajanje poteka ...")
         self._append_log(f"Začenjam prevajanje za {len(selected_projects)} projektov.")
         threading.Thread(target=self._translate_worker, args=(selected_projects,), daemon=True).start()
@@ -216,8 +219,38 @@ class TranslatorGUI(tk.Tk):
         project = projects[project_index]
         self.translate_button.configure(state="disabled")
         self.status_button.configure(state="disabled")
+        self.reset_button.configure(state="disabled")
         self.status_text.set("Pridobivam stanje projekta ...")
         threading.Thread(target=self._status_worker, args=(project,), daemon=True).start()
+
+    def _reset_needs_editing(self):
+        projects = self.config_manager.projects
+        choice = self.project_choice.get()
+        if not projects:
+            messagebox.showinfo("Ni projektov", "Najprej dodaj projekt.", parent=self)
+            return
+        if not self.translator.api_keys.get("weblate"):
+            messagebox.showerror("Manjkajoči API ključ", "V zavihku Nastavitve vnesi in shrani Weblate API ključ.", parent=self)
+            return
+        if choice == "Vsi projekti":
+            selected_projects = list(projects)
+            scope = "vseh projektih"
+        else:
+            project_index = self.project_combo.current() - 1
+            selected_projects = [projects[project_index]]
+            scope = f"projektu '{selected_projects[0].get('name', 'Projekt')}'"
+        if not messagebox.askyesno(
+            "Ponastavi prevode",
+            f"V {scope} spremenim vse prevode, označene za prevod, v neprevedene?",
+            parent=self,
+        ):
+            return
+
+        self.translate_button.configure(state="disabled")
+        self.status_button.configure(state="disabled")
+        self.reset_button.configure(state="disabled")
+        self.status_text.set("Ponastavljam prevode ...")
+        threading.Thread(target=self._reset_worker, args=(selected_projects,), daemon=True).start()
 
     def _status_worker(self, project):
         try:
@@ -233,13 +266,22 @@ class TranslatorGUI(tk.Tk):
         except Exception as error:
             self.result_queue.put(("error", str(error)))
 
+    def _reset_worker(self, projects):
+        try:
+            reset_count = self.translator.reset_needs_editing(projects)
+            self.result_queue.put(("reset_success", reset_count))
+        except Exception as error:
+            self.result_queue.put(("reset_error", str(error)))
+
     def _process_queue(self):
         try:
             while True:
                 kind, message = self.result_queue.get_nowait()
-                self.status_text.set("Pripravljeno" if kind in ("success", "status_success") else "Napaka")
+                self.status_text.set("Pripravljeno" if kind in ("success", "status_success", "reset_success") else "Napaka")
                 if kind == "success":
                     self._append_log(message)
+                elif kind == "reset_success":
+                    self._append_log(f"Ponastavljenih prevodov: {message}")
                 elif kind == "status_success":
                     project_name, status = message
                     self._append_log(f"Stanje projekta '{project_name}'")
@@ -252,8 +294,13 @@ class TranslatorGUI(tk.Tk):
                     self._append_log(message)
                 self.translate_button.configure(state="normal")
                 self.status_button.configure(state="normal")
-                if kind in ("error", "status_error"):
-                    title = "Napaka pri prevajanju" if kind == "error" else "Napaka pri pridobivanju stanja"
+                self.reset_button.configure(state="normal")
+                if kind in ("error", "status_error", "reset_error"):
+                    title = {
+                        "error": "Napaka pri prevajanju",
+                        "status_error": "Napaka pri pridobivanju stanja",
+                        "reset_error": "Napaka pri ponastavljanju prevodov",
+                    }[kind]
                     messagebox.showerror(title, message, parent=self)
         except queue.Empty:
             pass

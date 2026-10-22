@@ -88,6 +88,21 @@ class Translator:
 
         return untranslated_units
 
+    def reset_needs_editing(self, projects: list[dict]) -> int:
+        reset_count = 0
+        api_key = self.api_keys["weblate"]
+        client = Weblate(url=WEBLATE_URL, key=api_key)
+
+        for project in projects:
+            translations = Translation(client, project["translations_link"])
+            for unit in translations.units():
+                if unit["state"] == NEEDS_EDITING and len(unit["source"]) == 1:
+                    # do not translate multi-line segments (plural)
+                    unit.patch(state=UNTRANSLATED, target=[""])
+                    reset_count += 1
+
+        return reset_count
+
     def get_project_status(self, project_url: str) -> dict[str, int]:
         api_key = self.api_keys["weblate"]
         client = Weblate(url=WEBLATE_URL, key=api_key)
