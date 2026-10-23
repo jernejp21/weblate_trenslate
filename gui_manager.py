@@ -48,6 +48,11 @@ class TranslatorGUI(tk.Tk):
         self.project_combo.pack(side="left", padx=8)
         self.translate_button = ttk.Button(controls, text="Zaženi prevajanje", command=self._start_translation)
         self.translate_button.pack(side="left")
+        batch_controls = ttk.Frame(self.translation_tab)
+        batch_controls.pack(fill="x", pady=(8, 0))
+        ttk.Label(batch_controls, text="Prevodov naenkrat").pack(side="left")
+        self.units_size = tk.StringVar(value="100")
+        ttk.Spinbox(batch_controls, from_=1, to=100, textvariable=self.units_size, width=6).pack(side="left", padx=(8, 0))
         self.status_button = ttk.Button(controls, text="Prikaži stanje", command=self._show_status)
         self.status_button.pack(side="left", padx=(8, 0))
         self.reset_button = ttk.Button(controls, text="Ponastavi prevode", command=self._reset_needs_editing)
@@ -98,7 +103,7 @@ class TranslatorGUI(tk.Tk):
                 project.get("name", ""), project.get("source_lang", ""),
                 project.get("target_lang", ""), project.get("translations_link", ""),
             ))
-        choices = ["Vsi projekti"] + [
+        choices = [
             f"{index + 1}. {project.get('name', 'Brez imena')}"
             for index, project in enumerate(projects)
         ]
@@ -183,39 +188,38 @@ class TranslatorGUI(tk.Tk):
 
     def _start_translation(self):
         projects = self.config_manager.projects
-        choice = self.project_choice.get()
         if not projects:
             messagebox.showinfo("Ni projektov", "Najprej dodaj projekt.", parent=self)
             return
         if not all(self.translator.api_keys.get(key) for key in ("leemeta", "weblate")):
             messagebox.showerror("Manjkajoči API ključi", "V zavihku Nastavitve vnesi in shrani oba API ključa.", parent=self)
             return
-        if choice == "Vsi projekti":
-            selected_projects = list(projects)
-        else:
-            project_index = self.project_combo.current() - 1
-            selected_projects = [projects[project_index]]
+        project_index = self.project_combo.current()
+        selected_project = projects[project_index]
+        try:
+            translate_units_size = int(self.units_size.get())
+        except ValueError:
+            translate_units_size = 0
+        if not 1 <= translate_units_size <= 100:
+            messagebox.showerror("Neveljavno število", "Vnesi število prevodov od 1 do 100.", parent=self)
+            return
         self.translate_button.configure(state="disabled")
         self.status_button.configure(state="disabled")
         self.reset_button.configure(state="disabled")
         self.status_text.set("Prevajanje poteka ...")
-        self._append_log(f"Začenjam prevajanje za {len(selected_projects)} projektov.")
-        threading.Thread(target=self._translate_worker, args=(selected_projects,), daemon=True).start()
+        self._append_log(f"Začenjam prevajanje za '{selected_project['name']}'.")
+        threading.Thread(target=self._translate_worker, args=(selected_project["translations_link"], translate_units_size), daemon=True).start()
 
     def _show_status(self):
         projects = self.config_manager.projects
-        choice = self.project_choice.get()
         if not projects:
             messagebox.showinfo("Ni projektov", "Najprej dodaj projekt.", parent=self)
-            return
-        if choice == "Vsi projekti":
-            messagebox.showinfo("Izberi projekt", "Za prikaz stanja izberi posamezen projekt.", parent=self)
             return
         if not self.translator.api_keys.get("weblate"):
             messagebox.showerror("Manjkajoči API ključ", "V zavihku Nastavitve vnesi in shrani Weblate API ključ.", parent=self)
             return
 
-        project_index = self.project_combo.current() - 1
+        project_index = self.project_combo.current()
         project = projects[project_index]
         self.translate_button.configure(state="disabled")
         self.status_button.configure(state="disabled")
@@ -225,20 +229,23 @@ class TranslatorGUI(tk.Tk):
 
     def _reset_needs_editing(self):
         projects = self.config_manager.projects
-        choice = self.project_choice.get()
         if not projects:
             messagebox.showinfo("Ni projektov", "Najprej dodaj projekt.", parent=self)
             return
         if not self.translator.api_keys.get("weblate"):
             messagebox.showerror("Manjkajoči API ključ", "V zavihku Nastavitve vnesi in shrani Weblate API ključ.", parent=self)
             return
-        if choice == "Vsi projekti":
-            selected_projects = list(projects)
-            scope = "vseh projektih"
-        else:
-            project_index = self.project_combo.current() - 1
-            selected_projects = [projects[project_index]]
-            scope = f"projektu '{selected_projects[0].get('name', 'Projekt')}'"
+        project_index = self.project_combo.current()
+        selected_project = projects[project_index]
+        try:
+            reset_units_size = int(self.units_size.get())
+        except ValueError:
+            reset_units_size = 0
+        if not 1 <= reset_units_size <= 100:
+            messagebox.showerror("Neveljavno število", "Vnesi število prevodov od 1 do 100.", parent=self)
+            return
+
+        scope = f"projektu '{selected_project.get('name', 'Projekt')}'"
         if not messagebox.askyesno(
             "Ponastavi prevode",
             f"V {scope} spremenim vse prevode, označene za prevod, v neprevedene?",
@@ -250,7 +257,7 @@ class TranslatorGUI(tk.Tk):
         self.status_button.configure(state="disabled")
         self.reset_button.configure(state="disabled")
         self.status_text.set("Ponastavljam prevode ...")
-        threading.Thread(target=self._reset_worker, args=(selected_projects,), daemon=True).start()
+        threading.Thread(target=self._reset_worker, args=(selected_project["translations_link"], reset_units_size), daemon=True).start()
 
     def _status_worker(self, project):
         try:
@@ -259,16 +266,16 @@ class TranslatorGUI(tk.Tk):
         except Exception as error:
             self.result_queue.put(("status_error", str(error)))
 
-    def _translate_worker(self, projects):
+    def _translate_worker(self, project_url, translate_units_size=100):
         try:
-            self.translator.translate_projects(projects)
+            self.translator.translate_project(project_url, translate_units_size)
             self.result_queue.put(("success", "Prevajanje je zaključeno."))
         except Exception as error:
             self.result_queue.put(("error", str(error)))
 
-    def _reset_worker(self, projects):
+    def _reset_worker(self, project_url, reset_units_size):
         try:
-            reset_count = self.translator.reset_needs_editing(projects)
+            reset_count = self.translator.reset_needs_editing(project_url, reset_units_size)
             self.result_queue.put(("reset_success", reset_count))
         except Exception as error:
             self.result_queue.put(("reset_error", str(error)))

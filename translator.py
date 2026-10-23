@@ -11,40 +11,46 @@ READONLY = 100
 
 LEEBUDY_BASE_URL = "https://calcqvtdldqwqewvqhur.supabase.co/functions/v1" # LeeBudy AI url
 WEBLATE_URL = "https://hosted.weblate.org/api/" # Weblate url
+WEBLATE_TIMEOUT = 60 # Weblate timeout in seconds
 
 
 class Translator:
-    def __init__(self, api_keys: dict):
+    def __init__(self, api_keys: dict, chunk_size: int = 100):
         self.api_keys = api_keys
+        self.chunk_size = chunk_size
 
-    def translate_projects(self, projects: list[dict]):
-        for project in projects:
-            untranslated_units = self.get_untranslated_units(project["translations_link"])
+    def translate_project(self, project_url: str, max_units: int = 1):
+        remaining_units = max_units
+        if remaining_units == 0:
+            return
+        untranslated_units = self.get_untranslated_units(project_url)
+        if remaining_units is not None:
+            untranslated_units = untranslated_units[:remaining_units]
+            remaining_units -= len(untranslated_units)
 
-            untranslated_chunks = []
-            chunk_size = 100
-            for i in range(0, len(untranslated_units), chunk_size):
-                untranslated_chunks.append(untranslated_units[i:i + chunk_size])
+        untranslated_chunks = []
+        for i in range(0, len(untranslated_units), self.chunk_size):
+            untranslated_chunks.append(untranslated_units[i:i + self.chunk_size])
 
-            for chunk in untranslated_chunks:
-                sources = []
-                units_to_translate = []
-                for unit in chunk:
-                    if len(unit["source"]) == 1:
-                        # do not translate multi-line segments (plural)
-                        sources.extend(unit["source"])
-                        units_to_translate.append(unit)
+        for chunk in untranslated_chunks:
+            sources = []
+            units_to_translate = []
+            for unit in chunk:
+                if len(unit["source"]) == 1:
+                    # do not translate multi-line segments (plural)
+                    sources.extend(unit["source"])
+                    units_to_translate.append(unit)
 
-                if sources:
-                    translated_segments = self.translate_segments(sources,
-                                                                  project["source_lang"],
-                                                                  project["target_lang"])
+            if sources:
+                translated_segments = self.translate_segments(sources,
+                                                                project_url["source_lang"],
+                                                                project_url["target_lang"])
 
-                    for unit in units_to_translate:
-                        target_list = [translated_segments[0]]
-                        del translated_segments[0]
-                        #print(f"Source: {unit['source']}, Target: {target_list}")
-                        unit.patch(state=NEEDS_EDITING, target=target_list)
+                for unit in units_to_translate:
+                    target_list = [translated_segments[0]]
+                    del translated_segments[0]
+                    #print(f"Source: {unit['source']}, Target: {target_list}")
+                    unit.patch(state=NEEDS_EDITING, target=target_list)
 
     def translate_segments(self, segments: list[str], source_lang, target_lang) -> list[str]:
         api_key = self.api_keys["leemeta"]
@@ -77,7 +83,7 @@ class Translator:
 
     def get_untranslated_units(self, project_url: str) -> list[dict]:
         api_key = self.api_keys["weblate"]
-        client = Weblate(url=WEBLATE_URL, key=api_key)
+        client = Weblate(url=WEBLATE_URL, key=api_key, timeout=WEBLATE_TIMEOUT)
         translations = Translation(client, project_url)
         units = list(translations.units())
 
@@ -88,24 +94,26 @@ class Translator:
 
         return untranslated_units
 
-    def reset_needs_editing(self, projects: list[dict]) -> int:
+    def reset_needs_editing(self, project_url: str, reset_units_size) -> int:
         reset_count = 0
         api_key = self.api_keys["weblate"]
-        client = Weblate(url=WEBLATE_URL, key=api_key)
+        client = Weblate(url=WEBLATE_URL, key=api_key, timeout=WEBLATE_TIMEOUT)
+        translations = Translation(client, project_url)
+        units = list(translations.units())
 
-        for project in projects:
-            translations = Translation(client, project["translations_link"])
-            for unit in translations.units():
-                if unit["state"] == NEEDS_EDITING and len(unit["source"]) == 1:
-                    # do not translate multi-line segments (plural)
-                    unit.patch(state=UNTRANSLATED, target=[""])
-                    reset_count += 1
+        units_size = min(len(units), reset_units_size)
+
+        for index in range(0, units_size):
+            if units[index]["state"] == NEEDS_EDITING and len(units[index]["source"]) == 1:
+                # do not translate multi-line segments (plural)
+                units[index].patch(state=UNTRANSLATED, target=[""])
+                reset_count += 1
 
         return reset_count
 
     def get_project_status(self, project_url: str) -> dict[str, int]:
         api_key = self.api_keys["weblate"]
-        client = Weblate(url=WEBLATE_URL, key=api_key)
+        client = Weblate(url=WEBLATE_URL, key=api_key, timeout=WEBLATE_TIMEOUT)
         translations = Translation(client, project_url)
         units = list(translations.units())
 
