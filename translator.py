@@ -94,19 +94,19 @@ class Translator:
 
         return untranslated_units
 
-    def reset_needs_editing(self, project_url: str, reset_units_size) -> int:
+    def reset_needs_editing(self, project_url: str, reset_units_size: int = 10) -> int:
         reset_count = 0
         api_key = self.api_keys["weblate"]
         client = Weblate(url=WEBLATE_URL, key=api_key, timeout=WEBLATE_TIMEOUT)
         translations = Translation(client, project_url)
         units = list(translations.units())
 
-        units_size = min(len(units), reset_units_size)
-
-        for index in range(0, units_size):
-            if units[index]["state"] == NEEDS_EDITING and len(units[index]["source"]) == 1:
+        for unit in units:
+            if unit["state"] == NEEDS_EDITING and len(unit["source"]) == 1:
+                if reset_count >= reset_units_size:
+                    break
                 # do not translate multi-line segments (plural)
-                units[index].patch(state=UNTRANSLATED, target=[""])
+                unit.patch(state=UNTRANSLATED, target=[""])
                 reset_count += 1
 
         return reset_count
