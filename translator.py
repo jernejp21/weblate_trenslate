@@ -19,11 +19,11 @@ class Translator:
         self.api_keys = api_keys
         self.chunk_size = chunk_size
 
-    def translate_project(self, project_url: str, max_units: int = 1):
+    def translate_project(self, project: dict, max_units: int = 1):
         remaining_units = max_units
         if remaining_units == 0:
             return
-        untranslated_units = self.get_untranslated_units(project_url)
+        untranslated_units = self.get_untranslated_units(project["translations_link"])
         if remaining_units is not None:
             untranslated_units = untranslated_units[:remaining_units]
             remaining_units -= len(untranslated_units)
@@ -43,8 +43,8 @@ class Translator:
 
             if sources:
                 translated_segments = self.translate_segments(sources,
-                                                                project_url["source_lang"],
-                                                                project_url["target_lang"])
+                                                                project["source_lang"],
+                                                                project["target_lang"])
 
                 for unit in units_to_translate:
                     target_list = [translated_segments[0]]
@@ -115,11 +115,13 @@ class Translator:
         api_key = self.api_keys["weblate"]
         client = Weblate(url=WEBLATE_URL, key=api_key, timeout=WEBLATE_TIMEOUT)
         translations = Translation(client, project_url)
-        units = list(translations.units())
+        stats = translations.statistics()
+        stats_dict = stats.get_data()
+        untranslated = stats_dict["total"] - stats_dict["translated_words"]
 
         return {
-            "total": len(units),
-            "translated": sum(unit["state"] == TRANSLATED for unit in units),
-            "untranslated": sum(unit["state"] == UNTRANSLATED for unit in units),
-            "needs_editing": sum(unit["state"] == NEEDS_EDITING for unit in units),
+            "total": stats_dict["total"],
+            "translated": stats_dict["translated_words"],
+            "untranslated": untranslated,
+            "needs_editing": stats_dict["fuzzy"],
         }

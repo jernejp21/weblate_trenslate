@@ -1,3 +1,4 @@
 APIKEY.json
 .venv
 __pycache__
+test.py

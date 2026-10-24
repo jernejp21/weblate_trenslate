@@ -208,7 +208,7 @@ class TranslatorGUI(tk.Tk):
         self.reset_button.configure(state="disabled")
         self.status_text.set("Prevajanje poteka ...")
         self._append_log(f"Začenjam prevajanje za '{selected_project['name']}'.")
-        threading.Thread(target=self._translate_worker, args=(selected_project["translations_link"], translate_units_size), daemon=True).start()
+        threading.Thread(target=self._translate_worker, args=(selected_project, translate_units_size), daemon=True).start()
 
     def _show_status(self):
         projects = self.config_manager.projects
@@ -257,25 +257,25 @@ class TranslatorGUI(tk.Tk):
         self.status_button.configure(state="disabled")
         self.reset_button.configure(state="disabled")
         self.status_text.set("Ponastavljam prevode ...")
-        threading.Thread(target=self._reset_worker, args=(selected_project["translations_link"], reset_units_size), daemon=True).start()
+        threading.Thread(target=self._reset_worker, args=(selected_project, reset_units_size), daemon=True).start()
 
-    def _status_worker(self, project):
+    def _status_worker(self, project: dict):
         try:
             status = self.translator.get_project_status(project["translations_link"])
             self.result_queue.put(("status_success", (project.get("name", "Projekt"), status)))
         except Exception as error:
             self.result_queue.put(("status_error", str(error)))
 
-    def _translate_worker(self, project_url, translate_units_size=100):
+    def _translate_worker(self, project: dict, translate_units_size: int=100):
         try:
-            self.translator.translate_project(project_url, translate_units_size)
+            self.translator.translate_project(project, translate_units_size)
             self.result_queue.put(("success", "Prevajanje je zaključeno."))
         except Exception as error:
             self.result_queue.put(("error", str(error)))
 
-    def _reset_worker(self, project_url, reset_units_size):
+    def _reset_worker(self, project: dict, reset_units_size: int):
         try:
-            reset_count = self.translator.reset_needs_editing(project_url, reset_units_size)
+            reset_count = self.translator.reset_needs_editing(project["translations_link"], reset_units_size)
             self.result_queue.put(("reset_success", reset_count))
         except Exception as error:
             self.result_queue.put(("reset_error", str(error)))
