@@ -117,11 +117,11 @@ class Translator:
         translations = Translation(client, project_url)
         stats = translations.statistics()
         stats_dict = stats.get_data()
-        untranslated = stats_dict["total"] - stats_dict["translated_words"]
+        untranslated = stats_dict["total"] - stats_dict["translated"]
 
         return {
             "total": stats_dict["total"],
-            "translated": stats_dict["translated_words"],
+            "translated": stats_dict["translated"],
             "untranslated": untranslated,
             "needs_editing": stats_dict["fuzzy"],
         }
