@@ -85,12 +85,7 @@ class Translator:
         api_key = self.api_keys["weblate"]
         client = Weblate(url=WEBLATE_URL, key=api_key, timeout=WEBLATE_TIMEOUT)
         translations = Translation(client, project_url)
-        units = list(translations.units())
-
-        untranslated_units = []
-        for unit in units:
-            if unit["state"] == UNTRANSLATED:
-                untranslated_units.append(unit)
+        untranslated_units = list(translations.units(q="state:empty"))
 
         return untranslated_units
 
@@ -99,14 +94,12 @@ class Translator:
         api_key = self.api_keys["weblate"]
         client = Weblate(url=WEBLATE_URL, key=api_key, timeout=WEBLATE_TIMEOUT)
         translations = Translation(client, project_url)
-        units = list(translations.units())
+        units = list(translations.units(q="is:needs-editing"))
 
         for unit in units:
-            if unit["state"] == NEEDS_EDITING and len(unit["source"]) == 1:
-                if reset_count >= reset_units_size:
-                    break
-                # do not translate multi-line segments (plural)
-                unit.patch(state=UNTRANSLATED, target=[""])
+            if reset_units_size > reset_count:
+                target_len = len(unit["target"])
+                unit.patch(state=UNTRANSLATED, target=target_len*[""])
                 reset_count += 1
 
         return reset_count
