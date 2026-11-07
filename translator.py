@@ -62,6 +62,13 @@ class Translator:
                                  json={"source_lang": source_lang,
                                        "target_lang": target_lang,
                                        "segments": segments}).json()
+        # Check if quota exceeded
+        if response.get("error"):
+            error_msg = (f"LeeBudy API: {response['error']} \n"+
+                        f"Requested {response['requested']} "+
+                        f"characters, but only {response['remaining']} characters remaining.")
+            raise Exception(error_msg)
+
         req_id = response["request_id"]
 
         # 2) Poll
