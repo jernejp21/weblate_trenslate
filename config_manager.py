@@ -9,6 +9,7 @@ class ConfigManager:
         self.get_config_file()
         self.api_keys = self.load_api_keys()
         self.projects = self.load_projects()
+        self.gui_language = self.load_gui_language()
 
     def get_config_file(self):
         if platform.system() == "Windows":
@@ -49,5 +50,14 @@ class ConfigManager:
 
     def set_projects(self, projects: list[dict]):
         self.config_file["projects"] = projects
+        with open(self.config_file_path, "w", encoding="utf-8") as file:
+            json.dump(self.config_file, file, indent=4)
+
+    def load_gui_language(self) -> str:
+        self.config_file.setdefault("gui_language", "en")
+        return self.config_file["gui_language"]
+
+    def set_gui_language(self, language: str):
+        self.config_file["gui_language"] = language
         with open(self.config_file_path, "w", encoding="utf-8") as file:
             json.dump(self.config_file, file, indent=4)

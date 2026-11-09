@@ -111,9 +111,9 @@ class CLIManager:
         project_nr = int(input("Choose a project to translate (or -1 to select all):"))
 
         if project_nr == -1:
-            self.translator.translate_projects(self.config_manager.projects)
+            self.translator.translate_project(self.config_manager.projects)
         else:
-            self.translator.translate_projects([self.config_manager.projects[project_nr]])
+            self.translator.translate_project([self.config_manager.projects[project_nr]])
         return
     
 if __name__ == "__main__":
